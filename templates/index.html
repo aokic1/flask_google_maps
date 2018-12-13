@@ -1,0 +1,246 @@
+<!--Code by Armin Okic - Viral Virtual
+Heatmaps, dots and lines with Flask and GMaps API
+-->
+
+<html>
+<head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no"/>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8"/>
+    <title>Heatmaps, dots and lines with Flask and GMaps API</title>
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_API_KEY&libraries=visualization"
+            type="text/javascript"></script>
+
+    <style>
+        html, body {
+            margin:0px;
+            padding:0px;
+        }
+        #map_canvas {
+            width: 100%;
+            height: 100%
+        }
+
+        #floating-panel {
+            position: absolute;
+            top: 10px;
+            left: 25%;
+            z-index: 5;
+            background-color: #fff;
+            padding: 5px;
+            border: 1px solid #999;
+            text-align: center;
+            font-family: 'Roboto','sans-serif';
+            line-height: 30px;
+            padding-left: 10px;
+        }
+    </style>
+</head>
+
+
+<script>
+/// Variables that are used to hold values forwarded from Flask
+    var points_coords = [];
+    var lines = [];
+    var heatmap_data = [];
+    var heatmap_google;
+    var map;
+/// Plotting variables
+    var point_icon0 = {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        fillColor: '#F00',
+                        fillOpacity: 0.6,
+                        strokeColor: '#000',
+                        strokeOpacity: 0.9,
+                        strokeWeight: 0.9,
+                        scale: 5
+                    }
+
+    var point_icon1 = {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    fillColor: '#FF0',
+                    fillOpacity: 0.6,
+                    strokeColor: '#000',
+                    strokeOpacity: 0.9,
+                    strokeWeight: 0.9,
+                    scale: 5
+                }
+
+    var point_icon2 = {
+                    path: google.maps.SymbolPath.BACKWARD_OPEN_ARROW,
+                    fillColor: '#FF0',
+                    fillOpacity: 0.6,
+                    strokeColor: '#999',
+                    strokeOpacity: 0.9,
+                    strokeWeight: 0.9,
+                    scale: 5
+                }
+/// Style variables for GMaps
+    var no_style = [
+          {
+            "stylers": [
+              { "visibility": "on" },
+              { "color": '#FFFFFF' }
+            ]
+          },{
+          }
+        ]
+
+
+    var simple_style = [
+                  {
+                    "stylers": [
+                      { "visibility": "simplified" }
+                    ]
+                  },{
+                    "elementType": "labels.text.fill",
+                    "stylers": [
+                      { "color": "#7a5f71" },
+                      { "visibility": "off" }
+                    ]
+                  },{
+                    "featureType": "road",
+                    "stylers": [
+                      { "visibility": "off" }
+                    ]
+                  },{
+                    "elementType": "labels",
+                    "stylers": [
+                      { "visibility": "off" }
+                    ]
+                  },{
+                    "featureType": "transit.line",
+                    "elementType": "geometry",
+                    "stylers": [
+                      { "visibility": "off" }
+                    ]
+                  },{
+                  }
+                ]
+    var gradient = ["rgba(0, 0, 255, 0)",
+                    "rgba(57, 102, 227, 1)",
+                    "rgba(57, 147, 198, 1)",
+                    "rgba(57, 170, 150, 1)",
+                    "rgba(102, 200, 113, 1)",
+                    "rgba(102, 200, 57, 1)",
+                    "rgba(147, 255, 0, 1)",
+                    "rgba(193, 227, 0, 1)",
+                    "rgba(238, 227, 0, 1)",
+                    "rgba(244, 227, 0, 1)",
+                    "rgba(249, 198, 0, 1)",
+                    "rgba(255, 170, 0, 1)",
+                    "rgba(255, 113, 0, 1)",
+                    "rgba(255, 57, 0, 1)",
+                    "rgba(255, 0, 0, 1)"]
+/// Plotting
+    var center_y = 43.84864
+    var center_x = 18.35644
+    function initialize() {
+        var centerlatlng = new google.maps.LatLng(center_y, center_x);
+        var myOptions = {
+            zoom: 13,
+            center: centerlatlng,
+            mapTypeId: 'roadmap', //can also be 'satellite'
+            labels: false,
+            disableDefaultUI: true
+            //styles: no_style
+            // for styles you can use variables defined above no_style, simple_style
+            // in that case comment the mapTypeId
+                        };
+
+        map = new google.maps.Map(document.getElementById("map_canvas"), myOptions);
+/// Importing from Flask
+    ///importing points and heatmap data:
+        {%for point in points%}
+            if ({{point.value_info}}==22)
+                {marked_icon = point_icon0}
+            else if ({{point.value_info}}==33)
+                {marked_icon = point_icon1}
+            else
+                {marked_icon = point_icon2}
+           points_coords.push(new google.maps.Marker({
+                               position: { lat:{{point.lat}}, lng:{{point.long}} },
+                               map:map,
+                               title: String("Point ID = "+{{point.point_id}}+"%\nLabel = "+{{point.label}}+"kB\nLogitude = "+{{point.long}}+"\nLatitude = "+{{point.lat}}+"\nValue = "+{{point.value_info}}),
+                               icon: marked_icon
+                               })
+                            );
+           heatmap_data.push({location: new google.maps.LatLng({{point.lat}}, {{point.long}}), weight: {{point.heatmap_value}}}
+                );
+        {% endfor %}
+
+/// Importing lines from Flask
+        {%for line in lines%}
+            var l = [
+                    {lat:{{line.y1}}, lng:{{line.x1}}},
+                    {lat:{{line.y2}}, lng:{{line.x2}}}
+                    ]
+            //Different colors of lines depanding on the forwarded value
+            if ({{line.value}} < 5) {
+                lines.push( new google.maps.Polyline({
+                            path: l,
+                            geodesic: true,
+                            strokeColor: '#000000',
+                            strokeOpacity: {{line.value}},
+                            strokeWeight: {{line.value}}
+                            })
+                );
+            }
+            else {
+                lines.push( new google.maps.Polyline({
+                            path: l,
+                            geodesic: true,
+                            strokeColor: '#FFFF00',
+                            strokeOpacity: {{line.value}},
+                            strokeWeight: {{line.value}}
+                            })
+                 );
+            }
+        {% endfor %}
+
+/// Lines
+        for (var i = 0; i < lines.length; i++)
+            {lines[i].setMap(map);};
+
+/// Heatmap
+        heatmap_google = new google.maps.visualization.HeatmapLayer({
+            data: heatmap_data,
+            gradient: gradient,
+            dissipating: true,
+            //maxIntensity: 333333,
+            radius:70
+            //Radius should be changed according to the result expected on the map
+            });
+        heatmap_google.setMap(map);
+
+    //end
+    };
+
+
+/// Other plotting functions:
+function toggleHeatmap() {
+        heatmap_google.setMap(heatmap_google.getMap() ? null : map);
+
+      }
+function togglePoints() {
+        for (var i = 0; i < points_coords.length; i++)
+            {points_coords[i].setMap(points_coords[i].getMap() ? null : map)
+         };
+      }
+function toggleLines() {
+        for (var i = 0; i < lines.length; i++)
+            {lines[i].setMap(lines[i].getMap() ? null : map)
+         };
+      }
+
+
+</script>
+<body onload="initialize()">
+<div id="floating-panel">
+  <button onclick="toggleHeatmap()">Toggle Heatmap</button>
+  <button onclick="togglePoints()">Toggle Points</button>
+  <button onclick="toggleLines()">Toggle Lines</button>
+</div>
+
+<div id="map_canvas" ></div>
+</body>
+</html>
